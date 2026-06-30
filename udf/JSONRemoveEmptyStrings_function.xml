@@ -1,0 +1,12 @@
+<functions>
+  <function>
+    <type>executable</type>
+    <name>JSONRemoveEmptyStrings</name>
+    <return_type>String</return_type>
+    <argument>
+      <type>String</type>
+    </argument>
+    <format>Raw</format>
+    <command>json_remove_empty_strings_udf</command>
+  </function>
+</functions>

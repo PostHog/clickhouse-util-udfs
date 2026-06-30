@@ -1,0 +1,17 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - ${UDF_XML}:/etc/clickhouse-server/user_defined/${UDF_XML_FILE}:ro
+      - ${UDF_CFG:-./udf/udf_config.xml}:/etc/clickhouse-server/config.d/udf_config.xml:ro
+      - ${USER_DATA}:/var/lib/clickhouse/user_files:rw
+      - ${UDF_BIN}:/var/lib/clickhouse/user_scripts/${UDF_SCRIPT_NAME}:ro
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
