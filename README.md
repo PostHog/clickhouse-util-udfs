@@ -9,6 +9,7 @@ A monorepo for PostHog utility ClickHouse executable UDFs.
 | `JSONRemoveEmptyStrings` | `json_remove_empty_strings_udf` | `cmd/json_remove_empty_strings_udf` |
 | `JSONRemoveDuplicateKeys` | `json_key_dedup_udf` | `cmd/json_key_dedup_udf` |
 | `JSONDropKeys` | `json_drop_keys_udf` | `cmd/json_drop_keys_udf` |
+| `JSONCleanPostHogEventProperties` | `json_clean_posthog_event_properties_udf` | `cmd/json_clean_posthog_event_properties_udf` |
 
 Each UDF reads one JSON string per row using ClickHouse's executable UDF `Raw` format and exits non-zero on malformed JSON.
 

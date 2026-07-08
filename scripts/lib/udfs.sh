@@ -4,6 +4,7 @@ UDFS=(
   json_remove_empty_strings
   json_remove_duplicate_keys
   json_drop_keys
+  json_clean_posthog_event_properties
 )
 
 normalize_udf() {
@@ -16,6 +17,9 @@ normalize_udf() {
       ;;
     json_drop_keys|json_drop_keys_udf|JSONDropKeys)
       echo "json_drop_keys"
+      ;;
+    json_clean_posthog_event_properties|json_clean_posthog_event_properties_udf|JSONCleanPostHogEventProperties)
+      echo "json_clean_posthog_event_properties"
       ;;
     *)
       echo "Unknown UDF: $1" >&2
@@ -51,6 +55,9 @@ udf_binary() {
     json_drop_keys)
       echo "json_drop_keys_udf"
       ;;
+    json_clean_posthog_event_properties)
+      echo "json_clean_posthog_event_properties_udf"
+      ;;
     *)
       echo "Unknown UDF: $1" >&2
       return 1
@@ -69,6 +76,9 @@ udf_function() {
     json_drop_keys)
       echo "JSONDropKeys"
       ;;
+    json_clean_posthog_event_properties)
+      echo "JSONCleanPostHogEventProperties"
+      ;;
     *)
       echo "Unknown UDF: $1" >&2
       return 1
@@ -86,6 +96,9 @@ udf_xml_file() {
       ;;
     json_drop_keys)
       echo "JSONDropKeys_function.xml"
+      ;;
+    json_clean_posthog_event_properties)
+      echo "JSONCleanPostHogEventProperties_function.xml"
       ;;
     *)
       echo "Unknown UDF: $1" >&2
@@ -106,6 +119,9 @@ udf_test_query() {
       ;;
     json_drop_keys)
       echo "SELECT JSONDropKeys(['a'])(x) FROM file('$input_file', 'TabSeparated', 'x String') FORMAT TabSeparated"
+      ;;
+    json_clean_posthog_event_properties)
+      echo "SELECT JSONCleanPostHogEventProperties(x) FROM file('$input_file', 'TabSeparated', 'x String') FORMAT TabSeparated"
       ;;
     *)
       echo "Unknown UDF: $1" >&2

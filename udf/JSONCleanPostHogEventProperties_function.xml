@@ -1,0 +1,12 @@
+<functions>
+  <function>
+    <type>executable</type>
+    <name>JSONCleanPostHogEventProperties</name>
+    <return_type>String</return_type>
+    <argument>
+      <type>String</type>
+    </argument>
+    <format>Raw</format>
+    <command>json_clean_posthog_event_properties_udf</command>
+  </function>
+</functions>
