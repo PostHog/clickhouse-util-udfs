@@ -4,15 +4,65 @@ A monorepo for PostHog utility ClickHouse executable UDFs.
 
 ## UDFs
 
-| ClickHouse function | Binary | Source package |
-| --- | --- | --- |
-| `JSONRemoveEmptyStrings` | `json_remove_empty_strings_udf` | `cmd/json_remove_empty_strings_udf` |
-| `JSONRemoveDuplicateKeys` | `json_key_dedup_udf` | `cmd/json_key_dedup_udf` |
-| `JSONDropKeys` | `json_drop_keys_udf` | `cmd/json_drop_keys_udf` |
-| `JSONCleanPostHogEventProperties` | `json_clean_posthog_event_properties_udf` | `cmd/json_clean_posthog_event_properties_udf` |
-| `decompress` | `decompress_udf` | `cmd/decompress_udf` |
+| ClickHouse function | Purpose | Binary | Source package |
+| --- | --- | --- | --- |
+| `JSONRemoveEmptyStrings` | Replace JSON empty strings with `null`. | `json_remove_empty_strings_udf` | `cmd/json_remove_empty_strings_udf` |
+| `JSONRemoveDuplicateKeys` | Collapse duplicate and dotted JSON keys. | `json_key_dedup_udf` | `cmd/json_key_dedup_udf` |
+| `JSONDropKeys` | Remove selected JSON keys or paths. | `json_drop_keys_udf` | `cmd/json_drop_keys_udf` |
+| `JSONCleanPostHogEventProperties` | Normalize PostHog event properties for typed JSON. | `json_clean_posthog_event_properties_udf` | `cmd/json_clean_posthog_event_properties_udf` |
+| `decompress` | Decompress GZIP, ZSTD, framed LZ4, or raw LZ4 blocks. | `decompress_udf` | `cmd/decompress_udf` |
 
 The JSON UDFs read one JSON string per row using ClickHouse's executable UDF `Raw` format and exit non-zero on malformed JSON. `decompress` uses binary-safe `RowBinary`, supports `GZIP`, `ZSTD`, `LZ4`, and `LZ4Block`, and auto-detects framed codecs when passed an empty codec string.
+
+## Function reference
+
+### `JSONRemoveEmptyStrings(json)`
+
+Recursively replaces empty string values with JSON `null` in objects and arrays. Dotted key names remain unchanged. Integers outside the signed 64-bit range become strings so they are not truncated.
+
+```sql
+SELECT JSONRemoveEmptyStrings('{"name":"","nested":{"value":"kept"}}');
+-- {"name":null,"nested":{"value":"kept"}}
+```
+
+### `JSONRemoveDuplicateKeys(json)`
+
+Recursively collapses duplicate object keys. It keeps the first non-empty value, or the last value when every duplicate is empty. Dotted keys are expanded into nested objects before deduplication.
+
+```sql
+SELECT JSONRemoveDuplicateKeys('{"name":null,"name":"Jane","account.id":42}');
+-- {"name":"Jane","account":{"id":42}}
+```
+
+### `JSONDropKeys(keys)(json)`
+
+Removes the named keys from JSON objects. Use dot-separated paths for nested keys; paths also apply to objects inside arrays.
+
+```sql
+SELECT JSONDropKeys(['password', 'profile.secret'])('{"password":"x","profile":{"name":"Jane","secret":"y"}}');
+-- {"profile":{"name":"Jane"}}
+```
+
+### `JSONCleanPostHogEventProperties(json)`
+
+Performs the cleanup required before PostHog event properties are cast to typed ClickHouse JSON: expands dotted keys, removes `null` object fields, collapses duplicate keys, and protects integers outside ClickHouse's signed/unsigned 64-bit ranges. It also normalizes `$active_feature_flags`, `$exception_functions`, `$exception_sources`, `$exception_types`, and `$exception_values` to arrays of strings.
+
+```sql
+SELECT JSONCleanPostHogEventProperties('{"Account.client_id":"abc","null_field":null,"$exception_types":["TypeError",7]}');
+-- {"Account":{"client_id":"abc"},"$exception_types":["TypeError","7"]}
+```
+
+### `decompress(data, codec)`
+
+Returns the exact decompressed bytes as a ClickHouse `String`. Codec names are case-insensitive. Pass an empty codec to detect GZIP, ZSTD, or framed LZ4 from its header; raw LZ4 blocks have no header and require `LZ4Block` explicitly.
+
+```sql
+SELECT decompress(compressed_data, 'ZSTD') FROM events;
+SELECT decompress(compressed_data, '') FROM events; -- auto-detect framed codecs
+SELECT decompress(compressed_data, 'LZ4Block') FROM events;
+```
+
+Invalid, truncated, unsupported, or greater-than-64-MiB decompressed values fail the query rather than returning partial data.
 
 ## Layout
 
