@@ -5,6 +5,7 @@ UDFS=(
   json_remove_duplicate_keys
   json_drop_keys
   json_clean_posthog_event_properties
+  decompress
 )
 
 normalize_udf() {
@@ -20,6 +21,9 @@ normalize_udf() {
       ;;
     json_clean_posthog_event_properties|json_clean_posthog_event_properties_udf|JSONCleanPostHogEventProperties)
       echo "json_clean_posthog_event_properties"
+      ;;
+    decompress|decompress_udf)
+      echo "decompress"
       ;;
     *)
       echo "Unknown UDF: $1" >&2
@@ -58,6 +62,9 @@ udf_binary() {
     json_clean_posthog_event_properties)
       echo "json_clean_posthog_event_properties_udf"
       ;;
+    decompress)
+      echo "decompress_udf"
+      ;;
     *)
       echo "Unknown UDF: $1" >&2
       return 1
@@ -79,6 +86,9 @@ udf_function() {
     json_clean_posthog_event_properties)
       echo "JSONCleanPostHogEventProperties"
       ;;
+    decompress)
+      echo "decompress"
+      ;;
     *)
       echo "Unknown UDF: $1" >&2
       return 1
@@ -99,6 +109,9 @@ udf_xml_file() {
       ;;
     json_clean_posthog_event_properties)
       echo "JSONCleanPostHogEventProperties_function.xml"
+      ;;
+    decompress)
+      echo "decompress_function.xml"
       ;;
     *)
       echo "Unknown UDF: $1" >&2
@@ -122,6 +135,9 @@ udf_test_query() {
       ;;
     json_clean_posthog_event_properties)
       echo "SELECT JSONCleanPostHogEventProperties(x) FROM file('$input_file', 'TabSeparated', 'x String') FORMAT TabSeparated"
+      ;;
+    decompress)
+      echo "SELECT hex(decompress(unhex(data), codec)) FROM file('$input_file', 'TabSeparated', 'codec String, data String') FORMAT TabSeparated"
       ;;
     *)
       echo "Unknown UDF: $1" >&2

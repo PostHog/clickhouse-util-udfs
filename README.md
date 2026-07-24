@@ -10,8 +10,9 @@ A monorepo for PostHog utility ClickHouse executable UDFs.
 | `JSONRemoveDuplicateKeys` | `json_key_dedup_udf` | `cmd/json_key_dedup_udf` |
 | `JSONDropKeys` | `json_drop_keys_udf` | `cmd/json_drop_keys_udf` |
 | `JSONCleanPostHogEventProperties` | `json_clean_posthog_event_properties_udf` | `cmd/json_clean_posthog_event_properties_udf` |
+| `decompress` | `decompress_udf` | `cmd/decompress_udf` |
 
-Each UDF reads one JSON string per row using ClickHouse's executable UDF `Raw` format and exits non-zero on malformed JSON.
+The JSON UDFs read one JSON string per row using ClickHouse's executable UDF `Raw` format and exit non-zero on malformed JSON. `decompress` uses binary-safe `RowBinary`, supports `GZIP`, `ZSTD`, `LZ4`, and `LZ4Block`, and auto-detects framed codecs when passed an empty codec string.
 
 ## Layout
 
