@@ -10,7 +10,7 @@ import (
 
 func TestProcessLineCleansEventProperties(t *testing.T) {
 	input := []byte(`{"$active_feature_flags":"undefined","$active_feature_flags":["beta",42,null,{"a.b":1}],"Account.client_id":"abc","Account":{"client_id":null},"huge":18446744073709551616,"max_uint":18446744073709551615,"too_negative":-9223372036854775809,"min_int":-9223372036854775808,"null_field":null,"dupe":"","dupe":"kept","emptydupe":"","emptydupe":null}`)
-	want := `{"$active_feature_flags":["beta","42","","{\"a\":{\"b\":1}}"],"Account":{"client_id":"abc"},"huge":"18446744073709551616","max_uint":18446744073709551615,"too_negative":"-9223372036854775809","min_int":-9223372036854775808,"dupe":"kept","emptydupe":""}`
+	want := `{"Account":{"client_id":"abc"},"huge":"18446744073709551616","max_uint":18446744073709551615,"too_negative":"-9223372036854775809","min_int":-9223372036854775808,"dupe":"kept","emptydupe":""}`
 
 	var got bytes.Buffer
 	if err := processLine(input, &got); err != nil {
@@ -18,6 +18,152 @@ func TestProcessLineCleansEventProperties(t *testing.T) {
 	}
 	if got.String() != want {
 		t.Fatalf("processLine() = %s, want %s", got.String(), want)
+	}
+}
+
+func TestProcessLineDropsHighVolumeEventProperties(t *testing.T) {
+	input := []byte(`{"$ai_input":"input","$ai_output":"output","$ai_output_choices":["choice"],"$ai_input_state":{"state":1},"$ai_output_state":{"state":2},"$ai_tools":["tool"],"ph_product_tours":true,"$session_recording_remote_config":{"enabled":true},"$product_tours_activated":true,"$product_tours_enabled_server_side":true,"$surveys_activated":true,"$active_feature_flags":["flag"],"$feature_flag_payloads":{"flag":"payload"},"$set":{"name":"value"},"$set_once":{"initial":"value"},"$unset":["old_property"],"kept":"value"}`)
+	want := `{"kept":"value"}`
+
+	var got bytes.Buffer
+	if err := processLine(input, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.String() != want {
+		t.Fatalf("processLine() = %s, want %s", got.String(), want)
+	}
+}
+
+func TestProcessLineDropsFeatureProperties(t *testing.T) {
+	input := []byte(`{"$feature/first-flag":"control","$feature/number":42,"$feature/enabled":true,"$feature/config":{"nested.value":"dropped"},"$feature_flags":{"existing":"dropped"},"$feature_flag_payloads":{"flag":"dropped"},"other":"value"}`)
+	want := `{"$feature_flags":{"existing":"dropped"},"other":"value"}`
+
+	var got bytes.Buffer
+	if err := processLine(input, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.String() != want {
+		t.Fatalf("processLine() = %s, want %s", got.String(), want)
+	}
+}
+
+func TestEventPropertyRulesCoverNonStringSchemaPaths(t *testing.T) {
+	tests := map[normalizationKind][]string{
+		normalizationStringArray: {
+			"$exception_functions",
+			"$exception_sources",
+			"$exception_types",
+			"$exception_values",
+			"$mcp_listed_tool_names",
+		},
+		normalizationObjectArray: {
+			"$exception_list",
+		},
+		normalizationBool: {
+			"$ai_evaluation_allows_na",
+			"$ai_evaluation_applicable",
+			"$ai_evaluation_result",
+			"$ai_evaluation_skipped",
+			"$ai_is_error",
+			"$exception_handled",
+			"$exception_is_synthetic",
+			"$is_identified",
+			"$mcp_is_error",
+			"$process_person_profile",
+			"$sdk_debug_recording_script_not_loaded",
+			"$survey_completed",
+			"$survey_partially_completed",
+			"created_by_system",
+			"is_demo_project",
+			"is_first_component_load",
+			"is_first_event_for_user",
+			"is_initial_aggregation",
+			"is_oauth",
+			"is_organization_first_user",
+			"is_test_user",
+		},
+		normalizationInt64: {
+			"$agent_turn",
+			"$ai_audio_input_tokens",
+			"$ai_audio_output_tokens",
+			"$ai_cache_creation_input_tokens",
+			"$ai_cache_read_input_tokens",
+			"$ai_image_input_tokens",
+			"$ai_image_output_tokens",
+			"$ai_input_tokens",
+			"$ai_output_tokens",
+			"$ai_reasoning_tokens",
+			"$ai_sentiment_message_count",
+			"$ai_text_input_tokens",
+			"$ai_text_output_tokens",
+			"$ai_total_tokens",
+			"$ai_video_input_tokens",
+			"$ai_video_output_tokens",
+			"$ai_web_search_count",
+			"$survey_iteration",
+			"$timezone_offset",
+		},
+		normalizationFloat64: {
+			"$ai_audio_cost_usd",
+			"$ai_image_cost_usd",
+			"$ai_input_cost_usd",
+			"$ai_latency",
+			"$ai_output_cost_usd",
+			"$ai_request_cost_usd",
+			"$ai_sentiment_score",
+			"$ai_time_to_first_token",
+			"$ai_total_cost_usd",
+			"$ai_video_cost_usd",
+			"$ai_web_search_cost_usd",
+			"$mcp_duration_ms",
+			"$prev_pageview_max_content_percentage",
+			"$prev_pageview_max_scroll_percentage",
+			"$replay_minimum_duration",
+			"$replay_sample_rate",
+		},
+	}
+
+	for want, paths := range tests {
+		for _, path := range paths {
+			rule := eventPropertyRules.children[path]
+			if rule == nil {
+				t.Errorf("missing normalization rule for %s", path)
+				continue
+			}
+			if rule.normalization != want {
+				t.Errorf("normalization rule for %s = %v, want %v", path, rule.normalization, want)
+			}
+		}
+	}
+}
+
+func TestProcessLineNormalizesTypedEventProperties(t *testing.T) {
+	input := []byte(`{"$agent_turn":"42.0","$timezone_offset":"undefined","$ai_total_cost_usd":"1.25","$replay_sample_rate":1,"$is_identified":"TRUE","is_demo_project":0.0,"$mcp_listed_tool_names":"search","$exception_list":"{\"type\":\"TypeError\",\"value\":null}","string_property":42}`)
+	want := `{"$agent_turn":42,"$ai_total_cost_usd":1.25,"$replay_sample_rate":1.0,"$is_identified":true,"is_demo_project":false,"$mcp_listed_tool_names":["search"],"$exception_list":[{"type":"TypeError"}],"string_property":42}`
+
+	var got bytes.Buffer
+	if err := processLine(input, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.String() != want {
+		t.Fatalf("processLine() = %s, want %s", got.String(), want)
+	}
+}
+
+func TestProcessLineRejectsInvalidTypedEventProperties(t *testing.T) {
+	tests := []string{
+		`{"$is_identified":"yes"}`,
+		`{"$agent_turn":"1.5"}`,
+		`{"$agent_turn":"9223372036854775808"}`,
+		`{"$ai_total_cost_usd":"NaN"}`,
+		`{"$exception_list":[1]}`,
+	}
+
+	for _, input := range tests {
+		var got bytes.Buffer
+		if err := processLine([]byte(input), &got); err == nil {
+			t.Errorf("processLine(%s) returned no error", input)
+		}
 	}
 }
 

@@ -6,27 +6,59 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
+	"math/big"
 	"os"
 	"runtime/pprof"
+	"strconv"
 	"strings"
 	"unsafe"
 )
 
+type normalizationKind byte
+
+const (
+	normalizationNone normalizationKind = iota
+	normalizationStringArray
+	normalizationObjectArray
+	normalizationBool
+	normalizationInt64
+	normalizationFloat64
+)
+
 type pathRule struct {
-	arrayString bool
-	children    map[string]*pathRule
+	normalization normalizationKind
+	children      map[string]*pathRule
 }
 
-var arrayStringPaths = makePathRules(
-	"$active_feature_flags",
-	"$exception_functions",
-	"$exception_sources",
-	"$exception_types",
-	"$exception_values",
-)
+var eventPropertyRules = makeEventPropertyRules()
+
+var droppedEventPropertyKeys = map[string]struct{}{
+	"$ai_input":                          {},
+	"$ai_output":                         {},
+	"$ai_output_choices":                 {},
+	"$ai_input_state":                    {},
+	"$ai_output_state":                   {},
+	"$ai_tools":                          {},
+	"ph_product_tours":                   {},
+	"$session_recording_remote_config":   {},
+	"$product_tours_activated":           {},
+	"$product_tours_enabled_server_side": {},
+	"$surveys_activated":                 {},
+	"$active_feature_flags":              {},
+	"$feature_flag_payloads":             {},
+	"$set":                               {},
+	"$set_once":                          {},
+	"$unset":                             {},
+}
 
 func makePathRules(paths ...string) *pathRule {
 	root := &pathRule{children: make(map[string]*pathRule, len(paths))}
+	addPathRules(root, normalizationStringArray, paths...)
+	return root
+}
+
+func addPathRules(root *pathRule, normalization normalizationKind, paths ...string) {
 	for _, path := range paths {
 		node := root
 		for {
@@ -37,13 +69,88 @@ func makePathRules(paths ...string) *pathRule {
 				node.children[part] = child
 			}
 			if !ok {
-				child.arrayString = true
+				child.normalization = normalization
 				break
 			}
 			node = child
 			path = rest
 		}
 	}
+}
+
+func makeEventPropertyRules() *pathRule {
+	root := makePathRules(
+		"$exception_functions",
+		"$exception_sources",
+		"$exception_types",
+		"$exception_values",
+		"$mcp_listed_tool_names",
+	)
+	addPathRules(root, normalizationObjectArray,
+		"$exception_list",
+	)
+	addPathRules(root, normalizationBool,
+		"$ai_evaluation_allows_na",
+		"$ai_evaluation_applicable",
+		"$ai_evaluation_result",
+		"$ai_evaluation_skipped",
+		"$ai_is_error",
+		"$exception_handled",
+		"$exception_is_synthetic",
+		"$is_identified",
+		"$mcp_is_error",
+		"$process_person_profile",
+		"$sdk_debug_recording_script_not_loaded",
+		"$survey_completed",
+		"$survey_partially_completed",
+		"created_by_system",
+		"is_demo_project",
+		"is_first_component_load",
+		"is_first_event_for_user",
+		"is_initial_aggregation",
+		"is_oauth",
+		"is_organization_first_user",
+		"is_test_user",
+	)
+	addPathRules(root, normalizationInt64,
+		"$agent_turn",
+		"$ai_audio_input_tokens",
+		"$ai_audio_output_tokens",
+		"$ai_cache_creation_input_tokens",
+		"$ai_cache_read_input_tokens",
+		"$ai_image_input_tokens",
+		"$ai_image_output_tokens",
+		"$ai_input_tokens",
+		"$ai_output_tokens",
+		"$ai_reasoning_tokens",
+		"$ai_sentiment_message_count",
+		"$ai_text_input_tokens",
+		"$ai_text_output_tokens",
+		"$ai_total_tokens",
+		"$ai_video_input_tokens",
+		"$ai_video_output_tokens",
+		"$ai_web_search_count",
+		"$survey_iteration",
+		"$timezone_offset",
+	)
+	addPathRules(root, normalizationFloat64,
+		"$ai_audio_cost_usd",
+		"$ai_image_cost_usd",
+		"$ai_input_cost_usd",
+		"$ai_latency",
+		"$ai_output_cost_usd",
+		"$ai_request_cost_usd",
+		"$ai_sentiment_score",
+		"$ai_time_to_first_token",
+		"$ai_total_cost_usd",
+		"$ai_video_cost_usd",
+		"$ai_web_search_cost_usd",
+		"$mcp_duration_ms",
+		"$prev_pageview_max_content_percentage",
+		"$prev_pageview_max_scroll_percentage",
+		"$replay_minimum_duration",
+		"$replay_sample_rate",
+	)
 	return root
 }
 
@@ -114,7 +221,7 @@ func (p *processor) processLine(rawLine []byte, buf *bytes.Buffer) error {
 		return fmt.Errorf("json parse error: trailing data at byte %d", p.pos)
 	}
 
-	cleaned, err := p.cleanNode(arrayStringPaths, parsed)
+	cleaned, err := p.cleanEventProperties(parsed)
 	if err != nil {
 		p.recycle(parsed)
 		return fmt.Errorf("json clean error: %w", err)
@@ -129,6 +236,26 @@ func (p *processor) processLine(rawLine []byte, buf *bytes.Buffer) error {
 	}
 	p.recycle(cleaned)
 	return nil
+}
+
+func (p *processor) cleanEventProperties(v *value) (*value, error) {
+	if v.kind != kindObject {
+		return p.cleanNode(eventPropertyRules, v)
+	}
+
+	writeIdx := 0
+	for _, property := range v.entries {
+		_, drop := droppedEventPropertyKeys[property.key]
+		if drop || strings.HasPrefix(property.key, "$feature/") {
+			p.mutated = true
+			p.recycle(property.value)
+			continue
+		}
+		v.entries[writeIdx] = property
+		writeIdx++
+	}
+	v.entries = v.entries[:writeIdx]
+	return p.cleanNode(eventPropertyRules, v)
 }
 
 func (p *processor) newValue(kind valueKind) *value {
@@ -505,20 +632,22 @@ func (p *processor) cleanObject(pathRules *pathRule, obj *value) error {
 	obj.entries = p.expandDottedEntries(obj.entries)
 
 	writeIdx := 0
-	for _, entry := range obj.entries {
+	for readIdx, entry := range obj.entries {
 		var childPathRules *pathRule
 		if pathRules != nil {
 			childPathRules = pathRules.children[entry.key]
 		}
 		cleaned, err := p.cleanNode(childPathRules, entry.value)
 		if err != nil {
+			p.retainUnprocessedEntries(obj, writeIdx, readIdx)
 			return err
 		}
-		if childPathRules != nil && childPathRules.arrayString {
+		if childPathRules != nil && childPathRules.normalization != normalizationNone {
 			p.mutated = true
-			cleaned, err = p.coerceStringArray(cleaned)
+			cleaned, err = p.normalizeValue(childPathRules.normalization, cleaned)
 			if err != nil {
-				return err
+				p.retainUnprocessedEntries(obj, writeIdx, readIdx)
+				return fmt.Errorf("property %q: %w", entry.key, err)
 			}
 		}
 		if cleaned.kind == kindNull {
@@ -533,6 +662,12 @@ func (p *processor) cleanObject(pathRules *pathRule, obj *value) error {
 	obj.entries = obj.entries[:writeIdx]
 	p.deduplicateEntries(obj)
 	return nil
+}
+
+func (p *processor) retainUnprocessedEntries(obj *value, writeIdx, readIdx int) {
+	remaining := len(obj.entries) - readIdx
+	copy(obj.entries[writeIdx:writeIdx+remaining], obj.entries[readIdx:])
+	obj.entries = obj.entries[:writeIdx+remaining]
 }
 
 func (p *processor) expandDottedEntries(entries []entry) []entry {
@@ -645,6 +780,189 @@ func (p *processor) deduplicateEntries(obj *value) {
 	}
 }
 
+func (p *processor) normalizeValue(normalization normalizationKind, v *value) (*value, error) {
+	switch normalization {
+	case normalizationStringArray:
+		return p.coerceStringArray(v)
+	case normalizationObjectArray:
+		return p.coerceObjectArray(v)
+	case normalizationBool:
+		return p.coerceBool(v)
+	case normalizationInt64:
+		return p.coerceInt64(v)
+	case normalizationFloat64:
+		return p.coerceFloat64(v)
+	default:
+		return v, nil
+	}
+}
+
+func (p *processor) coerceBool(v *value) (*value, error) {
+	switch v.kind {
+	case kindBool, kindNull:
+		return v, nil
+	case kindString:
+		raw := strings.TrimSpace(v.s)
+		if isNullishString(raw) {
+			return p.reuseAsNull(v), nil
+		}
+		switch {
+		case strings.EqualFold(raw, "true"):
+			return p.reuseAsBool(v, true), nil
+		case strings.EqualFold(raw, "false"):
+			return p.reuseAsBool(v, false), nil
+		}
+		normalized, err := parseInt64Number(raw)
+		if err != nil || (normalized != "0" && normalized != "1") {
+			return nil, fmt.Errorf("cannot coerce %q to Bool", v.s)
+		}
+		return p.reuseAsBool(v, normalized == "1"), nil
+	case kindNumber:
+		normalized, err := parseInt64Number(v.s)
+		if err != nil || (normalized != "0" && normalized != "1") {
+			return nil, fmt.Errorf("cannot coerce %s to Bool", v.s)
+		}
+		return p.reuseAsBool(v, normalized == "1"), nil
+	default:
+		return nil, fmt.Errorf("cannot coerce %s to Bool", valueKindName(v.kind))
+	}
+}
+
+func (p *processor) coerceInt64(v *value) (*value, error) {
+	switch v.kind {
+	case kindNull:
+		return v, nil
+	case kindString:
+		raw := strings.TrimSpace(v.s)
+		if isNullishString(raw) {
+			return p.reuseAsNull(v), nil
+		}
+		normalized, err := parseInt64Number(raw)
+		if err != nil {
+			return nil, err
+		}
+		return p.reuseAsNumber(v, normalized), nil
+	case kindNumber:
+		normalized, err := parseInt64Number(v.s)
+		if err != nil {
+			return nil, err
+		}
+		v.s = normalized
+		return v, nil
+	default:
+		return nil, fmt.Errorf("cannot coerce %s to Int64", valueKindName(v.kind))
+	}
+}
+
+func (p *processor) coerceFloat64(v *value) (*value, error) {
+	switch v.kind {
+	case kindNull:
+		return v, nil
+	case kindString:
+		raw := strings.TrimSpace(v.s)
+		if isNullishString(raw) {
+			return p.reuseAsNull(v), nil
+		}
+		normalized, err := parseFloat64Number(raw)
+		if err != nil {
+			return nil, err
+		}
+		return p.reuseAsNumber(v, normalized), nil
+	case kindNumber:
+		normalized, err := parseFloat64Number(v.s)
+		if err != nil {
+			return nil, err
+		}
+		v.s = normalized
+		return v, nil
+	default:
+		return nil, fmt.Errorf("cannot coerce %s to Float64", valueKindName(v.kind))
+	}
+}
+
+func (p *processor) coerceObjectArray(v *value) (*value, error) {
+	switch v.kind {
+	case kindArray:
+		for _, child := range v.values {
+			if child.kind != kindObject {
+				return nil, fmt.Errorf("cannot coerce array containing %s to Array(JSON)", valueKindName(child.kind))
+			}
+		}
+		return v, nil
+	case kindObject:
+		arr := p.newValue(kindArray)
+		arr.values = append(arr.values, v)
+		return arr, nil
+	case kindNull:
+		return p.reuseAsEmptyArray(v), nil
+	case kindString:
+		raw := strings.TrimSpace(v.s)
+		if isNullishString(raw) {
+			return p.reuseAsEmptyArray(v), nil
+		}
+		parsed, err := p.parseStringifiedJSON(raw)
+		if err != nil {
+			return nil, err
+		}
+		normalized, err := p.coerceObjectArray(parsed)
+		if err != nil {
+			p.recycle(parsed)
+			return nil, err
+		}
+		p.recycle(v)
+		return normalized, nil
+	default:
+		return nil, fmt.Errorf("cannot coerce %s to Array(JSON)", valueKindName(v.kind))
+	}
+}
+
+func parseInt64Number(raw string) (string, error) {
+	parsed, _, err := big.ParseFloat(raw, 10, 256, big.ToNearestEven)
+	if err != nil {
+		return "", fmt.Errorf("cannot coerce %q to Int64", raw)
+	}
+	integer, accuracy := parsed.Int(nil)
+	if accuracy != big.Exact || !integer.IsInt64() {
+		return "", fmt.Errorf("cannot coerce %q to Int64", raw)
+	}
+	return integer.String(), nil
+}
+
+func parseFloat64Number(raw string) (string, error) {
+	parsed, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsInf(parsed, 0) || math.IsNaN(parsed) {
+		return "", fmt.Errorf("cannot coerce %q to Float64", raw)
+	}
+	normalized := strconv.FormatFloat(parsed, 'g', -1, 64)
+	if !strings.ContainsAny(normalized, ".eE") {
+		normalized += ".0"
+	}
+	return normalized, nil
+}
+
+func isNullishString(s string) bool {
+	return s == "" || strings.EqualFold(s, "null") || strings.EqualFold(s, "undefined")
+}
+
+func valueKindName(kind valueKind) string {
+	switch kind {
+	case kindString:
+		return "String"
+	case kindNumber:
+		return "Number"
+	case kindBool:
+		return "Bool"
+	case kindNull:
+		return "Null"
+	case kindObject:
+		return "Object"
+	case kindArray:
+		return "Array"
+	default:
+		return "unknown value"
+	}
+}
+
 func (p *processor) coerceStringArray(v *value) (*value, error) {
 	switch v.kind {
 	case kindArray:
@@ -683,18 +1001,39 @@ func (p *processor) coerceStringArray(v *value) (*value, error) {
 	}
 }
 
-func (p *processor) reuseAsEmptyArray(v *value) *value {
+func (p *processor) reuseAsNull(v *value) *value {
+	p.resetValue(v, kindNull)
+	return v
+}
+
+func (p *processor) reuseAsBool(v *value, b bool) *value {
+	p.resetValue(v, kindBool)
+	v.b = b
+	return v
+}
+
+func (p *processor) reuseAsNumber(v *value, s string) *value {
+	p.resetValue(v, kindNumber)
+	v.s = s
+	return v
+}
+
+func (p *processor) resetValue(v *value, kind valueKind) {
 	for _, entry := range v.entries {
 		p.recycle(entry.value)
 	}
 	for _, child := range v.values {
 		p.recycle(child)
 	}
-	v.kind = kindArray
+	v.kind = kind
 	v.s = ""
 	v.b = false
 	v.entries = v.entries[:0]
 	v.values = v.values[:0]
+}
+
+func (p *processor) reuseAsEmptyArray(v *value) *value {
+	p.resetValue(v, kindArray)
 	return v
 }
 
@@ -704,6 +1043,34 @@ func (p *processor) reuseAsStringArray(v *value, s string) *value {
 	child.s = s
 	v.values = append(v.values, child)
 	return v
+}
+
+func (p *processor) parseStringifiedJSON(raw string) (*value, error) {
+	if raw == "" || (raw[0] != '[' && raw[0] != '{') {
+		return nil, fmt.Errorf("cannot coerce %q to Array(JSON)", raw)
+	}
+
+	oldData, oldPos := p.data, p.pos
+	p.data = borrowedBytes(raw)
+	p.pos = 0
+	parsed, err := p.parseValue()
+	if err != nil {
+		p.data, p.pos = oldData, oldPos
+		return nil, fmt.Errorf("cannot coerce %q to Array(JSON): %w", raw, err)
+	}
+	p.skipWS()
+	if p.pos != len(p.data) {
+		p.recycle(parsed)
+		p.data, p.pos = oldData, oldPos
+		return nil, fmt.Errorf("cannot coerce %q to Array(JSON): trailing data", raw)
+	}
+	cleaned, err := p.cleanNode(nil, parsed)
+	p.data, p.pos = oldData, oldPos
+	if err != nil {
+		p.recycle(parsed)
+		return nil, err
+	}
+	return cleaned, nil
 }
 
 func (p *processor) parseStringifiedJSONArray(raw string) (*value, bool, error) {
@@ -725,7 +1092,7 @@ func (p *processor) parseStringifiedJSONArray(raw string) (*value, bool, error) 
 		p.data, p.pos = oldData, oldPos
 		return nil, false, nil
 	}
-	cleaned, err := p.cleanNode(arrayStringPaths, parsed)
+	cleaned, err := p.cleanNode(nil, parsed)
 	p.data, p.pos = oldData, oldPos
 	if err != nil {
 		return nil, false, err
