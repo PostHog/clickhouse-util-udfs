@@ -22,7 +22,7 @@ func TestProcessLineCleansEventProperties(t *testing.T) {
 }
 
 func TestProcessLineDropsHighVolumeEventProperties(t *testing.T) {
-	input := []byte(`{"$ai_input":"input","$ai_output":"output","$ai_output_choices":["choice"],"$ai_input_state":{"state":1},"$ai_output_state":{"state":2},"$ai_tools":["tool"],"ph_product_tours":true,"$session_recording_remote_config":{"enabled":true},"$product_tours_activated":true,"$product_tours_enabled_server_side":true,"$surveys_activated":true,"$active_feature_flags":["flag"],"$feature_flag_payloads":{"flag":"payload"},"$set":{"name":"value"},"$set_once":{"initial":"value"},"$unset":["old_property"],"kept":"value"}`)
+	input := []byte(`{"$ai_input":"input","$ai_output":"output","$ai_output_choices":["choice"],"$ai_input_state":{"state":1},"$ai_output_state":{"state":2},"$ai_tools":["tool"],"ph_product_tours":true,"$session_recording_remote_config":{"enabled":true},"$product_tours_activated":true,"$product_tours_enabled_server_side":true,"$surveys_activated":true,"$active_feature_flags":["flag"],"$feature_flag_payload":"payload","$feature_flag_bootstrapped_payload":true,"$feature_flag_original_payload":{"key":"value"},"$feature_flag_payloads":{"flag":"payload"},"$set":{"name":"value"},"$set_once":{"initial":"value"},"$unset":["old_property"],"kept":"value"}`)
 	want := `{"kept":"value"}`
 
 	var got bytes.Buffer
