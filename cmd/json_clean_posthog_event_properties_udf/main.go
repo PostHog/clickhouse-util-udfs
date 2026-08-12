@@ -720,7 +720,11 @@ func (p *processor) normalizeValue(normalization normalizationKind, v *value) (*
 	case normalizationStringArray:
 		return p.coerceStringArray(v)
 	case normalizationObjectArray:
-		return p.coerceObjectArray(v)
+		normalized, err := p.coerceObjectArray(v)
+		if err != nil {
+			return p.reuseAsEmptyArray(v), nil
+		}
+		return normalized, nil
 	default:
 		return v, nil
 	}

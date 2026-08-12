@@ -88,11 +88,21 @@ func TestProcessLinePreservesScalarPropertiesAndNormalizesComplexProperties(t *t
 	}
 }
 
-func TestProcessLineRejectsInvalidComplexEventProperty(t *testing.T) {
-	input := `{"$exception_list":[1]}`
-	var got bytes.Buffer
-	if err := processLine([]byte(input), &got); err == nil {
-		t.Errorf("processLine(%s) returned no error", input)
+func TestProcessLineDefaultsInvalidExceptionListToEmptyArray(t *testing.T) {
+	inputs := []string{
+		`{"$exception_list":"[redacted]"}`,
+		`{"$exception_list":[1]}`,
+		`{"$exception_list":true}`,
+	}
+
+	for _, input := range inputs {
+		var got bytes.Buffer
+		if err := processLine([]byte(input), &got); err != nil {
+			t.Fatalf("processLine(%s) returned error: %v", input, err)
+		}
+		if got.String() != `{"$exception_list":[]}` {
+			t.Fatalf("processLine(%s) = %s, want empty exception list", input, got.String())
+		}
 	}
 }
 
