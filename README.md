@@ -45,11 +45,11 @@ SELECT JSONDropKeys(['password', 'profile.secret'])('{"password":"x","profile":{
 
 ### `JSONCleanPostHogEventProperties(json)`
 
-Performs the cleanup required before PostHog event properties are cast to typed ClickHouse JSON: expands dotted keys, removes `null` object fields, collapses duplicate keys, and protects integers outside ClickHouse's signed/unsigned 64-bit ranges. It drops high-volume AI, product tour, survey, session recording, and feature-flag metadata, including every property whose key begins with `$feature/`, plus `$set`, `$set_once`, and `$unset`. Properties declared as `Bool`, `Int64`, `Float64`, `Array(String)`, or `Array(JSON)` in the typed event-properties schema are coerced to those types; invalid values fail processing.
+Performs the cleanup required before PostHog event properties are cast to typed ClickHouse JSON: expands dotted keys, removes `null` object fields, collapses duplicate keys, and protects integers outside ClickHouse's signed/unsigned 64-bit ranges. It drops high-volume AI, product tour, survey, session recording, and feature-flag metadata, including every property whose key begins with `$feature/`, plus `$set`, `$set_once`, and `$unset`. Scalar property values are preserved for ClickHouse to store as strings. Properties declared as `Array(String)` or `Array(JSON)` are coerced to those complex types; invalid complex values fail processing.
 
 ```sql
 SELECT JSONCleanPostHogEventProperties('{"Account.client_id":"abc","$feature/new-ui":"control","$is_identified":"true","null_field":null,"$exception_types":["TypeError",7]}');
--- {"Account":{"client_id":"abc"},"$is_identified":true,"$exception_types":["TypeError","7"]}
+-- {"Account":{"client_id":"abc"},"$is_identified":"true","$exception_types":["TypeError","7"]}
 ```
 
 ### `decompress(data, codec)`

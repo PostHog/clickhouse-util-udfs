@@ -6,11 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math"
-	"math/big"
 	"os"
 	"runtime/pprof"
-	"strconv"
 	"strings"
 	"unsafe"
 )
@@ -21,9 +18,6 @@ const (
 	normalizationNone normalizationKind = iota
 	normalizationStringArray
 	normalizationObjectArray
-	normalizationBool
-	normalizationInt64
-	normalizationFloat64
 )
 
 type pathRule struct {
@@ -91,68 +85,6 @@ func makeEventPropertyRules() *pathRule {
 	)
 	addPathRules(root, normalizationObjectArray,
 		"$exception_list",
-	)
-	addPathRules(root, normalizationBool,
-		"$ai_evaluation_allows_na",
-		"$ai_evaluation_applicable",
-		"$ai_evaluation_result",
-		"$ai_evaluation_skipped",
-		"$ai_is_error",
-		"$exception_handled",
-		"$exception_is_synthetic",
-		"$is_identified",
-		"$mcp_is_error",
-		"$process_person_profile",
-		"$sdk_debug_recording_script_not_loaded",
-		"$survey_completed",
-		"$survey_partially_completed",
-		"created_by_system",
-		"is_demo_project",
-		"is_first_component_load",
-		"is_first_event_for_user",
-		"is_initial_aggregation",
-		"is_oauth",
-		"is_organization_first_user",
-		"is_test_user",
-	)
-	addPathRules(root, normalizationInt64,
-		"$agent_turn",
-		"$ai_audio_input_tokens",
-		"$ai_audio_output_tokens",
-		"$ai_cache_creation_input_tokens",
-		"$ai_cache_read_input_tokens",
-		"$ai_image_input_tokens",
-		"$ai_image_output_tokens",
-		"$ai_input_tokens",
-		"$ai_output_tokens",
-		"$ai_reasoning_tokens",
-		"$ai_sentiment_message_count",
-		"$ai_text_input_tokens",
-		"$ai_text_output_tokens",
-		"$ai_total_tokens",
-		"$ai_video_input_tokens",
-		"$ai_video_output_tokens",
-		"$ai_web_search_count",
-		"$survey_iteration",
-		"$timezone_offset",
-	)
-	addPathRules(root, normalizationFloat64,
-		"$ai_audio_cost_usd",
-		"$ai_image_cost_usd",
-		"$ai_input_cost_usd",
-		"$ai_latency",
-		"$ai_output_cost_usd",
-		"$ai_request_cost_usd",
-		"$ai_sentiment_score",
-		"$ai_time_to_first_token",
-		"$ai_total_cost_usd",
-		"$ai_video_cost_usd",
-		"$ai_web_search_cost_usd",
-		"$mcp_duration_ms",
-		"$prev_pageview_max_content_percentage",
-		"$prev_pageview_max_scroll_percentage",
-		"$replay_minimum_duration",
-		"$replay_sample_rate",
 	)
 	return root
 }
@@ -789,97 +721,8 @@ func (p *processor) normalizeValue(normalization normalizationKind, v *value) (*
 		return p.coerceStringArray(v)
 	case normalizationObjectArray:
 		return p.coerceObjectArray(v)
-	case normalizationBool:
-		return p.coerceBool(v)
-	case normalizationInt64:
-		return p.coerceInt64(v)
-	case normalizationFloat64:
-		return p.coerceFloat64(v)
 	default:
 		return v, nil
-	}
-}
-
-func (p *processor) coerceBool(v *value) (*value, error) {
-	switch v.kind {
-	case kindBool, kindNull:
-		return v, nil
-	case kindString:
-		raw := strings.TrimSpace(v.s)
-		if isNullishString(raw) {
-			return p.reuseAsNull(v), nil
-		}
-		switch {
-		case strings.EqualFold(raw, "true"):
-			return p.reuseAsBool(v, true), nil
-		case strings.EqualFold(raw, "false"):
-			return p.reuseAsBool(v, false), nil
-		}
-		normalized, err := parseInt64Number(raw)
-		if err != nil || (normalized != "0" && normalized != "1") {
-			return nil, fmt.Errorf("cannot coerce %q to Bool", v.s)
-		}
-		return p.reuseAsBool(v, normalized == "1"), nil
-	case kindNumber:
-		normalized, err := parseInt64Number(v.s)
-		if err != nil || (normalized != "0" && normalized != "1") {
-			return nil, fmt.Errorf("cannot coerce %s to Bool", v.s)
-		}
-		return p.reuseAsBool(v, normalized == "1"), nil
-	default:
-		return nil, fmt.Errorf("cannot coerce %s to Bool", valueKindName(v.kind))
-	}
-}
-
-func (p *processor) coerceInt64(v *value) (*value, error) {
-	switch v.kind {
-	case kindNull:
-		return v, nil
-	case kindString:
-		raw := strings.TrimSpace(v.s)
-		if isNullishString(raw) {
-			return p.reuseAsNull(v), nil
-		}
-		normalized, err := parseInt64Number(raw)
-		if err != nil {
-			return nil, err
-		}
-		return p.reuseAsNumber(v, normalized), nil
-	case kindNumber:
-		normalized, err := parseInt64Number(v.s)
-		if err != nil {
-			return nil, err
-		}
-		v.s = normalized
-		return v, nil
-	default:
-		return nil, fmt.Errorf("cannot coerce %s to Int64", valueKindName(v.kind))
-	}
-}
-
-func (p *processor) coerceFloat64(v *value) (*value, error) {
-	switch v.kind {
-	case kindNull:
-		return v, nil
-	case kindString:
-		raw := strings.TrimSpace(v.s)
-		if isNullishString(raw) {
-			return p.reuseAsNull(v), nil
-		}
-		normalized, err := parseFloat64Number(raw)
-		if err != nil {
-			return nil, err
-		}
-		return p.reuseAsNumber(v, normalized), nil
-	case kindNumber:
-		normalized, err := parseFloat64Number(v.s)
-		if err != nil {
-			return nil, err
-		}
-		v.s = normalized
-		return v, nil
-	default:
-		return nil, fmt.Errorf("cannot coerce %s to Float64", valueKindName(v.kind))
 	}
 }
 
@@ -917,30 +760,6 @@ func (p *processor) coerceObjectArray(v *value) (*value, error) {
 	default:
 		return nil, fmt.Errorf("cannot coerce %s to Array(JSON)", valueKindName(v.kind))
 	}
-}
-
-func parseInt64Number(raw string) (string, error) {
-	parsed, _, err := big.ParseFloat(raw, 10, 256, big.ToNearestEven)
-	if err != nil {
-		return "", fmt.Errorf("cannot coerce %q to Int64", raw)
-	}
-	integer, accuracy := parsed.Int(nil)
-	if accuracy != big.Exact || !integer.IsInt64() {
-		return "", fmt.Errorf("cannot coerce %q to Int64", raw)
-	}
-	return integer.String(), nil
-}
-
-func parseFloat64Number(raw string) (string, error) {
-	parsed, err := strconv.ParseFloat(raw, 64)
-	if err != nil || math.IsInf(parsed, 0) || math.IsNaN(parsed) {
-		return "", fmt.Errorf("cannot coerce %q to Float64", raw)
-	}
-	normalized := strconv.FormatFloat(parsed, 'g', -1, 64)
-	if !strings.ContainsAny(normalized, ".eE") {
-		normalized += ".0"
-	}
-	return normalized, nil
 }
 
 func isNullishString(s string) bool {
@@ -1002,23 +821,6 @@ func (p *processor) coerceStringArray(v *value) (*value, error) {
 	default:
 		return p.reuseAsStringArray(v, p.nodeString(v)), nil
 	}
-}
-
-func (p *processor) reuseAsNull(v *value) *value {
-	p.resetValue(v, kindNull)
-	return v
-}
-
-func (p *processor) reuseAsBool(v *value, b bool) *value {
-	p.resetValue(v, kindBool)
-	v.b = b
-	return v
-}
-
-func (p *processor) reuseAsNumber(v *value, s string) *value {
-	p.resetValue(v, kindNumber)
-	v.s = s
-	return v
 }
 
 func (p *processor) resetValue(v *value, kind valueKind) {

@@ -47,7 +47,7 @@ func TestProcessLineDropsFeatureProperties(t *testing.T) {
 	}
 }
 
-func TestEventPropertyRulesCoverNonStringSchemaPaths(t *testing.T) {
+func TestEventPropertyRulesCoverComplexSchemaPaths(t *testing.T) {
 	tests := map[normalizationKind][]string{
 		normalizationStringArray: {
 			"$exception_functions",
@@ -58,68 +58,6 @@ func TestEventPropertyRulesCoverNonStringSchemaPaths(t *testing.T) {
 		},
 		normalizationObjectArray: {
 			"$exception_list",
-		},
-		normalizationBool: {
-			"$ai_evaluation_allows_na",
-			"$ai_evaluation_applicable",
-			"$ai_evaluation_result",
-			"$ai_evaluation_skipped",
-			"$ai_is_error",
-			"$exception_handled",
-			"$exception_is_synthetic",
-			"$is_identified",
-			"$mcp_is_error",
-			"$process_person_profile",
-			"$sdk_debug_recording_script_not_loaded",
-			"$survey_completed",
-			"$survey_partially_completed",
-			"created_by_system",
-			"is_demo_project",
-			"is_first_component_load",
-			"is_first_event_for_user",
-			"is_initial_aggregation",
-			"is_oauth",
-			"is_organization_first_user",
-			"is_test_user",
-		},
-		normalizationInt64: {
-			"$agent_turn",
-			"$ai_audio_input_tokens",
-			"$ai_audio_output_tokens",
-			"$ai_cache_creation_input_tokens",
-			"$ai_cache_read_input_tokens",
-			"$ai_image_input_tokens",
-			"$ai_image_output_tokens",
-			"$ai_input_tokens",
-			"$ai_output_tokens",
-			"$ai_reasoning_tokens",
-			"$ai_sentiment_message_count",
-			"$ai_text_input_tokens",
-			"$ai_text_output_tokens",
-			"$ai_total_tokens",
-			"$ai_video_input_tokens",
-			"$ai_video_output_tokens",
-			"$ai_web_search_count",
-			"$survey_iteration",
-			"$timezone_offset",
-		},
-		normalizationFloat64: {
-			"$ai_audio_cost_usd",
-			"$ai_image_cost_usd",
-			"$ai_input_cost_usd",
-			"$ai_latency",
-			"$ai_output_cost_usd",
-			"$ai_request_cost_usd",
-			"$ai_sentiment_score",
-			"$ai_time_to_first_token",
-			"$ai_total_cost_usd",
-			"$ai_video_cost_usd",
-			"$ai_web_search_cost_usd",
-			"$mcp_duration_ms",
-			"$prev_pageview_max_content_percentage",
-			"$prev_pageview_max_scroll_percentage",
-			"$replay_minimum_duration",
-			"$replay_sample_rate",
 		},
 	}
 
@@ -137,9 +75,9 @@ func TestEventPropertyRulesCoverNonStringSchemaPaths(t *testing.T) {
 	}
 }
 
-func TestProcessLineNormalizesTypedEventProperties(t *testing.T) {
-	input := []byte(`{"$agent_turn":"42.0","$timezone_offset":"undefined","$ai_total_cost_usd":"1.25","$replay_sample_rate":1,"$is_identified":"TRUE","is_demo_project":0.0,"$mcp_listed_tool_names":"search","$exception_list":"{\"type\":\"TypeError\",\"value\":null}","string_property":42}`)
-	want := `{"$agent_turn":42,"$ai_total_cost_usd":1.25,"$replay_sample_rate":1.0,"$is_identified":true,"is_demo_project":false,"$mcp_listed_tool_names":["search"],"$exception_list":[{"type":"TypeError"}],"string_property":42}`
+func TestProcessLinePreservesScalarPropertiesAndNormalizesComplexProperties(t *testing.T) {
+	input := []byte(`{"$agent_turn":"42.0","$ai_total_cost_usd":{"currency":"USD"},"$is_identified":"yes","created_by_system":"scheduler","$mcp_listed_tool_names":"search","$exception_list":"{\"type\":\"TypeError\",\"value\":null}"}`)
+	want := `{"$agent_turn":"42.0","$ai_total_cost_usd":{"currency":"USD"},"$is_identified":"yes","created_by_system":"scheduler","$mcp_listed_tool_names":["search"],"$exception_list":[{"type":"TypeError"}]}`
 
 	var got bytes.Buffer
 	if err := processLine(input, &got); err != nil {
@@ -150,20 +88,11 @@ func TestProcessLineNormalizesTypedEventProperties(t *testing.T) {
 	}
 }
 
-func TestProcessLineRejectsInvalidTypedEventProperties(t *testing.T) {
-	tests := []string{
-		`{"$is_identified":"yes"}`,
-		`{"$agent_turn":"1.5"}`,
-		`{"$agent_turn":"9223372036854775808"}`,
-		`{"$ai_total_cost_usd":"NaN"}`,
-		`{"$exception_list":[1]}`,
-	}
-
-	for _, input := range tests {
-		var got bytes.Buffer
-		if err := processLine([]byte(input), &got); err == nil {
-			t.Errorf("processLine(%s) returned no error", input)
-		}
+func TestProcessLineRejectsInvalidComplexEventProperty(t *testing.T) {
+	input := `{"$exception_list":[1]}`
+	var got bytes.Buffer
+	if err := processLine([]byte(input), &got); err == nil {
+		t.Errorf("processLine(%s) returned no error", input)
 	}
 }
 
