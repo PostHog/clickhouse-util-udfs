@@ -27,6 +27,8 @@ type pathRule struct {
 
 var eventPropertyRules = makeEventPropertyRules()
 
+const unparsablePropertiesKey = "$properties_unparsable"
+
 var droppedEventPropertyKeys = map[string]struct{}{
 	"$ai_input":                          {},
 	"$ai_output":                         {},
@@ -47,6 +49,7 @@ var droppedEventPropertyKeys = map[string]struct{}{
 	"$set":                               {},
 	"$set_once":                          {},
 	"$unset":                             {},
+	unparsablePropertiesKey:              {},
 }
 
 func makePathRules(paths ...string) *pathRule {
@@ -566,6 +569,7 @@ func (p *processor) cleanNode(pathRules *pathRule, v *value) (*value, error) {
 func (p *processor) cleanObject(pathRules *pathRule, obj *value) error {
 	obj.entries = p.expandDottedEntries(obj.entries)
 
+	var unparsable bytes.Buffer
 	writeIdx := 0
 	for readIdx, entry := range obj.entries {
 		var childPathRules *pathRule
@@ -579,10 +583,19 @@ func (p *processor) cleanObject(pathRules *pathRule, obj *value) error {
 		}
 		if childPathRules != nil && childPathRules.normalization != normalizationNone {
 			p.mutated = true
+			original := cleaned
 			cleaned, err = p.normalizeValue(childPathRules.normalization, cleaned)
 			if err != nil {
-				p.retainUnprocessedEntries(obj, writeIdx, readIdx)
-				return fmt.Errorf("property %q: %w", entry.key, err)
+				cleaned = original
+				if unparsable.Len() == 0 {
+					unparsable.WriteByte('{')
+				} else {
+					unparsable.WriteByte(',')
+				}
+				writeJSONString(&unparsable, entry.key)
+				unparsable.WriteByte(':')
+				p.writeValue(&unparsable, cleaned)
+				cleaned = p.reuseAsEmptyArray(cleaned)
 			}
 		}
 		if cleaned.kind == kindNull {
@@ -595,6 +608,12 @@ func (p *processor) cleanObject(pathRules *pathRule, obj *value) error {
 		writeIdx++
 	}
 	obj.entries = obj.entries[:writeIdx]
+	if unparsable.Len() > 0 {
+		unparsable.WriteByte('}')
+		marker := p.newValue(kindString)
+		marker.s = unparsable.String()
+		obj.entries = append(obj.entries, entry{key: unparsablePropertiesKey, value: marker})
+	}
 	p.deduplicateEntries(obj)
 	return nil
 }
@@ -720,11 +739,7 @@ func (p *processor) normalizeValue(normalization normalizationKind, v *value) (*
 	case normalizationStringArray:
 		return p.coerceStringArray(v)
 	case normalizationObjectArray:
-		normalized, err := p.coerceObjectArray(v)
-		if err != nil {
-			return p.reuseAsEmptyArray(v), nil
-		}
-		return normalized, nil
+		return p.coerceObjectArray(v)
 	default:
 		return v, nil
 	}

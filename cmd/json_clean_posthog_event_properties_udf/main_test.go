@@ -88,20 +88,20 @@ func TestProcessLinePreservesScalarPropertiesAndNormalizesComplexProperties(t *t
 	}
 }
 
-func TestProcessLineDefaultsInvalidExceptionListToEmptyArray(t *testing.T) {
-	inputs := []string{
-		`{"$exception_list":"[redacted]"}`,
-		`{"$exception_list":[1]}`,
-		`{"$exception_list":true}`,
+func TestProcessLineQuarantinesInvalidExceptionList(t *testing.T) {
+	tests := map[string]string{
+		`{"$properties_unparsable":"spoofed","$exception_list":"[redacted]","kept":"value"}`: `{"$exception_list":[],"kept":"value","$properties_unparsable":"{\"$exception_list\":\"[redacted]\"}"}`,
+		`{"$exception_list":[1]}`:  `{"$exception_list":[],"$properties_unparsable":"{\"$exception_list\":[1]}"}`,
+		`{"$exception_list":true}`: `{"$exception_list":[],"$properties_unparsable":"{\"$exception_list\":true}"}`,
 	}
 
-	for _, input := range inputs {
+	for input, want := range tests {
 		var got bytes.Buffer
 		if err := processLine([]byte(input), &got); err != nil {
 			t.Fatalf("processLine(%s) returned error: %v", input, err)
 		}
-		if got.String() != `{"$exception_list":[]}` {
-			t.Fatalf("processLine(%s) = %s, want empty exception list", input, got.String())
+		if got.String() != want {
+			t.Fatalf("processLine(%s) = %s, want %s", input, got.String(), want)
 		}
 	}
 }
