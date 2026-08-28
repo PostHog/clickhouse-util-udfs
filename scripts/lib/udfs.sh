@@ -2,6 +2,7 @@
 
 UDFS=(
   json_remove_empty_strings
+  json_strip_empty_strings_and_nulls
   json_remove_duplicate_keys
   json_drop_keys
   json_clean_posthog_event_properties
@@ -12,6 +13,9 @@ normalize_udf() {
   case "$1" in
     json_remove_empty_strings|json_remove_empty_strings_udf|JSONRemoveEmptyStrings)
       echo "json_remove_empty_strings"
+      ;;
+    json_strip_empty_strings_and_nulls|json_strip_empty_strings_and_nulls_udf|JSONStripEmptyStringsAndNulls)
+      echo "json_strip_empty_strings_and_nulls"
       ;;
     json_remove_duplicate_keys|json_key_dedup|json_key_dedup_udf|JSONRemoveDuplicateKeys)
       echo "json_remove_duplicate_keys"
@@ -53,6 +57,9 @@ udf_binary() {
     json_remove_empty_strings)
       echo "json_remove_empty_strings_udf"
       ;;
+    json_strip_empty_strings_and_nulls)
+      echo "json_strip_empty_strings_and_nulls_udf"
+      ;;
     json_remove_duplicate_keys)
       echo "json_key_dedup_udf"
       ;;
@@ -77,6 +84,9 @@ udf_function() {
     json_remove_empty_strings)
       echo "JSONRemoveEmptyStrings"
       ;;
+    json_strip_empty_strings_and_nulls)
+      echo "JSONStripEmptyStringsAndNulls"
+      ;;
     json_remove_duplicate_keys)
       echo "JSONRemoveDuplicateKeys"
       ;;
@@ -100,6 +110,9 @@ udf_xml_file() {
   case "$1" in
     json_remove_empty_strings)
       echo "JSONRemoveEmptyStrings_function.xml"
+      ;;
+    json_strip_empty_strings_and_nulls)
+      echo "JSONStripEmptyStringsAndNulls_function.xml"
       ;;
     json_remove_duplicate_keys)
       echo "JSONRemoveDuplicateKeys_function.xml"
@@ -126,6 +139,9 @@ udf_test_query() {
   case "$1" in
     json_remove_empty_strings)
       echo "SELECT JSONRemoveEmptyStrings(x) FROM file('$input_file', 'TabSeparated', 'x String') FORMAT TabSeparated"
+      ;;
+    json_strip_empty_strings_and_nulls)
+      echo "SELECT JSONStripEmptyStringsAndNulls(x) FROM file('$input_file', 'TabSeparated', 'x String') FORMAT TabSeparated"
       ;;
     json_remove_duplicate_keys)
       echo "SELECT JSONRemoveDuplicateKeys(x) FROM file('$input_file', 'TabSeparated', 'x String') FORMAT TabSeparated"

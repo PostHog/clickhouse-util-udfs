@@ -1,0 +1,13 @@
+<functions>
+  <function>
+    <type>executable_pool</type>
+    <name>JSONStripEmptyStringsAndNulls</name>
+    <return_type>String</return_type>
+    <argument>
+      <type>String</type>
+    </argument>
+    <format>Raw</format>
+    <command>json_strip_empty_strings_and_nulls_udf --chunked</command>
+    <send_chunk_header>true</send_chunk_header>
+  </function>
+</functions>

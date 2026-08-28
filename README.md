@@ -7,12 +7,13 @@ A monorepo for PostHog utility ClickHouse executable UDFs.
 | ClickHouse function | Purpose | Binary | Source package |
 | --- | --- | --- | --- |
 | `JSONRemoveEmptyStrings` | Replace JSON empty strings with `null`. | `json_remove_empty_strings_udf` | `cmd/json_remove_empty_strings_udf` |
+| `JSONStripEmptyStringsAndNulls` | Recursively remove empty strings, nulls, empty objects, and empty arrays. | `json_strip_empty_strings_and_nulls_udf` | `cmd/json_strip_empty_strings_and_nulls_udf` |
 | `JSONRemoveDuplicateKeys` | Collapse duplicate and dotted JSON keys. | `json_key_dedup_udf` | `cmd/json_key_dedup_udf` |
 | `JSONDropKeys` | Remove selected JSON keys or paths. | `json_drop_keys_udf` | `cmd/json_drop_keys_udf` |
 | `JSONCleanPostHogEventProperties` | Normalize PostHog event properties for typed JSON. | `json_clean_posthog_event_properties_udf` | `cmd/json_clean_posthog_event_properties_udf` |
 | `decompress` | Decompress GZIP, ZSTD, framed LZ4, or raw LZ4 blocks. | `decompress_udf` | `cmd/decompress_udf` |
 
-The JSON UDFs read one JSON string per row using ClickHouse's executable UDF `Raw` format and exit non-zero on malformed JSON. `decompress` uses binary-safe `RowBinary`, supports `GZIP`, `ZSTD`, `LZ4`, and `LZ4Block`, and auto-detects framed codecs when passed an empty codec string.
+The JSON UDFs read one JSON string per row using ClickHouse's executable UDF `Raw` format and exit non-zero on malformed JSON. `JSONStripEmptyStringsAndNulls` uses `executable_pool`; the others use `executable`. `decompress` uses binary-safe `RowBinary`, supports `GZIP`, `ZSTD`, `LZ4`, and `LZ4Block`, and auto-detects framed codecs when passed an empty codec string.
 
 ## Function reference
 
@@ -23,6 +24,15 @@ Recursively replaces empty string values with JSON `null` in objects and arrays.
 ```sql
 SELECT JSONRemoveEmptyStrings('{"name":"","nested":{"value":"kept"}}');
 -- {"name":null,"nested":{"value":"kept"}}
+```
+
+### `JSONStripEmptyStringsAndNulls(json)`
+
+Recursively removes JSON nulls, empty strings, empty arrays, and objects or arrays left empty after cleaning. A useless root becomes `null`; zero, false, and whitespace-only strings remain data. Integers outside the signed 64-bit range become strings so they are not truncated.
+
+```sql
+SELECT JSONStripEmptyStringsAndNulls('{"name":"","nested":{"missing":null},"values":[null,0]}');
+-- {"values":[0]}
 ```
 
 ### `JSONRemoveDuplicateKeys(json)`
