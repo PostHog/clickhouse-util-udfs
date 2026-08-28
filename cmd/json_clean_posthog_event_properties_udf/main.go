@@ -49,6 +49,8 @@ var droppedEventPropertyKeys = map[string]struct{}{
 	"$set":                               {},
 	"$set_once":                          {},
 	"$unset":                             {},
+	"$transformations_succeeded":         {},
+	"$transformations_skipped":           {},
 	unparsablePropertiesKey:              {},
 }
 
@@ -181,18 +183,40 @@ func (p *processor) cleanEventProperties(v *value) (*value, error) {
 		return p.cleanNode(eventPropertyRules, v)
 	}
 
+	var featureFlags *value
+	hasFeatureProperties := false
+	for _, property := range v.entries {
+		if strings.HasPrefix(property.key, "$feature/") {
+			hasFeatureProperties = true
+		} else if property.key == "$feature_flags" && property.value.kind == kindObject && featureFlags == nil {
+			featureFlags = property.value
+		}
+	}
+	createdFeatureFlags := hasFeatureProperties && featureFlags == nil
+	if createdFeatureFlags {
+		featureFlags = p.newValue(kindObject)
+	}
+
 	writeIdx := 0
 	for _, property := range v.entries {
 		_, drop := droppedEventPropertyKeys[property.key]
-		if drop || strings.HasPrefix(property.key, "$feature/") {
+		if drop || hasFeatureProperties && property.key == "$feature_flags" && property.value != featureFlags {
 			p.mutated = true
 			p.recycle(property.value)
+			continue
+		}
+		if name, ok := strings.CutPrefix(property.key, "$feature/"); ok {
+			featureFlags.entries = append(featureFlags.entries, entry{key: name, value: property.value})
+			p.mutated = true
 			continue
 		}
 		v.entries[writeIdx] = property
 		writeIdx++
 	}
 	v.entries = v.entries[:writeIdx]
+	if createdFeatureFlags {
+		v.entries = append(v.entries, entry{key: "$feature_flags", value: featureFlags})
+	}
 	return p.cleanNode(eventPropertyRules, v)
 }
 

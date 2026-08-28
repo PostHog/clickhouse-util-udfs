@@ -45,11 +45,11 @@ SELECT JSONDropKeys(['password', 'profile.secret'])('{"password":"x","profile":{
 
 ### `JSONCleanPostHogEventProperties(json)`
 
-Performs the cleanup required before PostHog event properties are cast to typed ClickHouse JSON: expands dotted keys, removes `null` object fields, collapses duplicate keys, and protects integers outside ClickHouse's signed/unsigned 64-bit ranges. It drops high-volume AI, product tour, survey, session recording, and feature-flag metadata, including every property whose key begins with `$feature/`, plus `$set`, `$set_once`, and `$unset`. Scalar property values are preserved for ClickHouse to store as strings. Properties declared as `Array(String)` or `Array(JSON)` are coerced to those complex types; rejected keys use empty arrays and are recorded as stringified JSON in `$properties_unparsable`.
+Performs the cleanup required before PostHog event properties are cast to typed ClickHouse JSON: expands dotted keys, removes `null` object fields, collapses duplicate keys, and protects integers outside ClickHouse's signed/unsigned 64-bit ranges. It groups every `$feature/<name>` property under `$feature_flags` using `<name>` as the nested key, and drops other high-volume AI, product tour, survey, session recording, and feature-flag metadata, plus `$set`, `$set_once`, and `$unset`. Scalar property values are preserved for ClickHouse to store as strings. Properties declared as `Array(String)` or `Array(JSON)` are coerced to those complex types; rejected keys use empty arrays and are recorded as stringified JSON in `$properties_unparsable`.
 
 ```sql
 SELECT JSONCleanPostHogEventProperties('{"Account.client_id":"abc","$feature/new-ui":"control","$is_identified":"true","null_field":null,"$exception_types":["TypeError",7]}');
--- {"Account":{"client_id":"abc"},"$is_identified":"true","$exception_types":["TypeError","7"]}
+-- {"Account":{"client_id":"abc"},"$is_identified":"true","$exception_types":["TypeError","7"],"$feature_flags":{"new-ui":"control"}}
 ```
 
 ### `decompress(data, codec)`

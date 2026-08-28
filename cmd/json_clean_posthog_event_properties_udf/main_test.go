@@ -22,7 +22,7 @@ func TestProcessLineCleansEventProperties(t *testing.T) {
 }
 
 func TestProcessLineDropsHighVolumeEventProperties(t *testing.T) {
-	input := []byte(`{"$ai_input":"input","$ai_output":"output","$ai_output_choices":["choice"],"$ai_input_state":{"state":1},"$ai_output_state":{"state":2},"$ai_tools":["tool"],"ph_product_tours":true,"$session_recording_remote_config":{"enabled":true},"$product_tours_activated":true,"$product_tours_enabled_server_side":true,"$surveys_activated":true,"$active_feature_flags":["flag"],"$feature_flag_payload":"payload","$feature_flag_bootstrapped_payload":true,"$feature_flag_original_payload":{"key":"value"},"$feature_flag_payloads":{"flag":"payload"},"$set":{"name":"value"},"$set_once":{"initial":"value"},"$unset":["old_property"],"kept":"value"}`)
+	input := []byte(`{"$ai_input":"input","$ai_output":"output","$ai_output_choices":["choice"],"$ai_input_state":{"state":1},"$ai_output_state":{"state":2},"$ai_tools":["tool"],"ph_product_tours":true,"$session_recording_remote_config":{"enabled":true},"$product_tours_activated":true,"$product_tours_enabled_server_side":true,"$surveys_activated":true,"$active_feature_flags":["flag"],"$feature_flag_payload":"payload","$feature_flag_bootstrapped_payload":true,"$feature_flag_original_payload":{"key":"value"},"$feature_flag_payloads":{"flag":"payload"},"$set":{"name":"value"},"$set_once":{"initial":"value"},"$unset":["old_property"],"$transformations_succeeded":["one"],"$transformations_skipped":["two"],"kept":"value"}`)
 	want := `{"kept":"value"}`
 
 	var got bytes.Buffer
@@ -34,9 +34,9 @@ func TestProcessLineDropsHighVolumeEventProperties(t *testing.T) {
 	}
 }
 
-func TestProcessLineDropsFeatureProperties(t *testing.T) {
-	input := []byte(`{"$feature/first-flag":"control","$feature/number":42,"$feature/enabled":true,"$feature/config":{"nested.value":"dropped"},"$feature_flags":{"existing":"dropped"},"$feature_flag_payloads":{"flag":"dropped"},"other":"value"}`)
-	want := `{"$feature_flags":{"existing":"dropped"},"other":"value"}`
+func TestProcessLineGroupsFeatureProperties(t *testing.T) {
+	input := []byte(`{"$feature/first-flag":"control","$feature/number":42,"$feature/enabled":true,"$feature/config":{"nested.value":"dropped"},"$feature_flags":"invalid","$feature_flags":{"existing":"kept"},"$feature_flag_payloads":{"flag":"dropped"},"other":"value"}`)
+	want := `{"$feature_flags":{"existing":"kept","first-flag":"control","number":42,"enabled":true,"config":{"nested":{"value":"dropped"}}},"other":"value"}`
 
 	var got bytes.Buffer
 	if err := processLine(input, &got); err != nil {
